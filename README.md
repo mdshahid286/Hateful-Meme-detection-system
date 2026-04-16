@@ -1,7 +1,5 @@
 # Multi-Lingual Hateful Meme Detection
 
-[![Watch Demo Video](Multi-LingualHatefulMemeDetection.gif)](UI.mkv)
-
 ## Project Overview
 
 This project addresses the growing challenge of detecting hateful memes across multiple languages on social media platforms. Hateful memes combine text and images to convey offensive messages that target individuals or groups based on characteristics such as race, gender, ethnicity, and religion. The detection of such content requires advanced multimodal analysis techniques that can interpret both visual and textual elements simultaneously.
@@ -64,42 +62,7 @@ This pipeline leverages the rich feature set created in Pipeline-1 to train mult
 
 ![Advanced Model Training and Ensemble Classification Pipeline](P_2.png)
 
-## Demo Video
 
-A demonstration video showcasing the system's capabilities is available below:
-
-<p align="center">
-  <a href="UI.mkv">
-    <img src="https://img.shields.io/badge/Watch%20Demo-Video-red?style=for-the-badge&logo=github" alt="Watch Demo Video" width="220">
-  </a>
-</p>
-
-The video demonstrates:
-- System setup and requirements
-- Processing of sample memes across multiple languages
-- Feature extraction visualization
-- Real-time classification of hateful vs. non-hateful content
-- Performance analysis and model comparison
-- Explanation of prediction outcomes
-
-To run the demo yourself, follow the installation instructions in the [Viewing the Demo Video](#Viewing the Demo Video) section.
-
-### Viewing the Demo Video
-
-The demo video is stored directly in this repository. There are several ways to view it:
-
-1. **Click the badge above** to open the video file in GitHub's media viewer
-2. **Clone the repository** and open the video file locally:
-   ```bash
-   git clone https://github.com/DISHASONI99/Multi-Lingual-Hateful-Meme-Detection.git
-   cd Multi-Lingual-Hateful-Meme-Detection/demo_video
-   # Open Multi-Lingual Hateful Meme Detection Demo Video.mp4 with your video player
-   ```
-3. **Download just the video** by navigating to the demo directory in the GitHub repository and clicking on the video file, then clicking the "Download" button
-
-To run the demo yourself, follow the installation instructions in the [Setup](#setup) section.
-
-## Setup
 
 ### Requirements
 ```
