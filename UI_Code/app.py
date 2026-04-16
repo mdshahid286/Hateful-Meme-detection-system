@@ -1,9 +1,11 @@
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 import streamlit as st
 import torch
 import numpy as np
 import cv2
 import traceback
-import os
 from PIL import Image as PILImage
 from transformers import BlipForQuestionAnswering, AutoProcessor
 from transformers import BertTokenizer, BertModel
@@ -35,61 +37,210 @@ from transformers import (
     BertModel, 
     BertTokenizer,
     ViTModel, 
-    ViTFeatureExtractor,
+    ViTImageProcessor,
     XLMRobertaModel, 
     XLMRobertaTokenizer
 )
 
+# Define base directory for models
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Set page config
 st.set_page_config(
-    page_title="Hateful Meme Detection",
-    page_icon="🧠",
+    page_title="HateLens",
+    page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for a more modern look
+# Custom CSS for a modern UI
 st.markdown("""
 <style>
-    .main {
-        background-color: #f8f9fa;
+    :root {
+        --bg: #0b0d12;
+        --panel: rgba(255, 255, 255, 0.06);
+        --panel-2: rgba(255, 255, 255, 0.10);
+        --text: rgba(255, 255, 255, 0.94);
+        --muted: rgba(255, 255, 255, 0.74);
+        --border: rgba(255, 255, 255, 0.14);
+        --brand: #e5e7eb;
+        --brand-2: #9ca3af;
+        --danger: #ef4444;
+        --warning: #f59e0b;
     }
+
+    /* App background */
     .stApp {
-        max-width: 1200px;
-        margin: 0 auto;
+        background:
+          radial-gradient(900px 420px at 18% 0%, rgba(255, 255, 255, 0.06), transparent 60%),
+          linear-gradient(180deg, #07080b 0%, #0b0d12 40%, #0b0d12 100%);
+        color: var(--text);
     }
-    h1, h2, h3 {
-        color: #1e3a8a;
+    .main { background: transparent; }
+
+    /* Typography */
+    h1, h2, h3, h4, h5, h6 {
+        color: var(--text) !important;
+        letter-spacing: -0.02em;
     }
-    .stButton button {
-        background-color: #3b82f6;
-        color: white;
-        border-radius: 6px;
-        padding: 0.5rem 1rem;
-        font-weight: 500;
+    p, li, label, .stMarkdown, .stText, .stCaption {
+        color: var(--muted) !important;
     }
-    .stButton button:hover {
-        background-color: #2563eb;
+
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+        border-right: 1px solid var(--border);
+        backdrop-filter: blur(10px);
     }
-    .results-container {
-        background-color: white;
-        padding: 1.5rem;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        margin-top: 1rem;
+    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] label {
+        color: var(--text) !important;
     }
-    .metric-container {
-        background-color: #f1f5f9;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
+
+    /* Cards / panels */
+    .ui-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px 18px;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
     }
-    .sidebar .sidebar-content {
-        background-color: #1e293b;
+    .ui-hero {
+        background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 18px 18px;
+        box-shadow: 0 20px 55px rgba(0, 0, 0, 0.32);
+    }
+    .ui-hero-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        min-height: 52px;
+    }
+    .ui-hero-title {
+        font-size: 28px;
+        font-weight: 850;
+        color: rgba(255,255,255,0.96);
+        letter-spacing: -0.03em;
+        line-height: 1.05;
+        margin: 0;
+    }
+    .ui-hero-subtitle {
+        margin-top: 6px;
+        font-size: 14px;
+        color: rgba(255,255,255,0.78);
+        line-height: 1.35;
+    }
+    .ui-hero-badge {
+        width: 40px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        background: rgba(0,0,0,0.28);
+        border: 1px solid rgba(255,255,255,0.14);
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+        flex: 0 0 auto;
+    }
+    .ui-hero-badge span {
+        display: inline-block;
+        font-size: 18px;
+        line-height: 1;
+        transform: translateY(0.5px);
+    }
+    .ui-kpi {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 12px 14px;
+    }
+
+    /* Buttons */
+    .stButton > button {
+        background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.08)) !important;
+        color: rgba(255,255,255,0.92) !important;
+        border: 1px solid rgba(255,255,255,0.16) !important;
+        border-radius: 12px !important;
+        padding: 0.6rem 1rem !important;
+        font-weight: 650 !important;
+        transition: transform 120ms ease, filter 120ms ease;
+    }
+    .stButton > button:hover {
+        filter: brightness(1.10);
+        transform: translateY(-1px);
+    }
+    .stButton > button:active { transform: translateY(0px); }
+
+    /* Inputs */
+    [data-testid="stFileUploaderDropzone"] {
+        background: var(--panel) !important;
+        border: 1px dashed rgba(255,255,255,0.22) !important;
+        border-radius: 16px !important;
+    }
+    [data-testid="stTextInputRootElement"], 
+    [data-testid="stTextAreaRootElement"],
+    [data-testid="stSelectbox"],
+    [data-testid="stMultiSelect"],
+    [data-testid="stRadio"] {
+        background: transparent;
+    }
+
+    /* Expanders */
+    details {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 6px 10px;
+    }
+
+    /* Dataframe */
+    [data-testid="stDataFrame"] {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+    }
+
+    /* Alert tweaks */
+    [data-testid="stAlert"] {
+        background: rgba(255,255,255,0.06);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+    }
+
+    /* Code blocks */
+    pre, code {
+        border-radius: 12px !important;
     }
 </style>
 """, unsafe_allow_html=True)
+
+def ui_hero(title: str, subtitle: str) -> None:
+    st.markdown(
+        f"""
+        <div class="ui-hero">
+          <div class="ui-hero-inner">
+            <div style="min-width: 0;">
+              <div class="ui-hero-title">{title}</div>
+              <div class="ui-hero-subtitle">{subtitle}</div>
+            </div>
+            <div class="ui-hero-badge" aria-label="HateLens">
+              <span>🔍</span>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def ui_card_start() -> None:
+    st.markdown('<div class="ui-card">', unsafe_allow_html=True)
+
+def ui_card_end() -> None:
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # Initialize session state variables if they don't exist
 if 'uploaded_image' not in st.session_state:
@@ -137,14 +288,15 @@ def detect_and_crop_face(image):
 # Load model and processor once globally
 @st.cache_resource(show_spinner=False)
 def load_blip_model():
-    model = BlipForQuestionAnswering.from_pretrained("Salesforce/blip-vqa-base")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = BlipForQuestionAnswering.from_pretrained("Salesforce/blip-vqa-base").to(device)
     processor = AutoProcessor.from_pretrained("Salesforce/blip-vqa-base")
-    return model, processor
+    return model, processor, device
      
 # Function to ask BLIP about facial features
 def analyze_face(face_image):
     try:
-        model, processor = load_blip_model()
+        model, processor, device = load_blip_model()
         # Convert BGR image to RGB and to PIL format
         face_rgb = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
         face_pil = PILImage.fromarray(face_rgb)
@@ -160,7 +312,7 @@ def analyze_face(face_image):
         results = {}
 
         for key, question in questions.items():
-            inputs = processor(face_pil, question, return_tensors="pt")
+            inputs = processor(face_pil, question, return_tensors="pt").to(device)
             out = model.generate(**inputs)
             answer = processor.decode(out[0], skip_special_tokens=True).strip()
             # Parse age as integer if applicable
@@ -207,54 +359,23 @@ def analyze_face(face_image):
 def run_blip_vqa(image):
     try:
         # Load BLIP model and processor
-        model, processor = load_blip_model()
-        # List of visual, emotional, textual, and contextual questions
+        model, processor, device = load_blip_model()
+        
+        # Reduced core question set for performance
         questions = [
-            # General Visual Information
+            # Core Visual & Content Information
             "What is shown in the image?",
+            "What is the text written on the image?",
             "Are there any people in the image?",
             "What objects are present in the image?",
-            "Are there any animals or cartoon characters in the image?",
-            "How many people are in the image?",
-            "Is the person in the image male or female?",
-            "What is the age of the person shown in the image?",
-            "What is the background or setting in the image?",
-
-            # Emotion, Action & Expression
-            "What is the facial expression of the person?",
-            "Describe the emotion of the person?",
-            "What action is the person doing?",
-            "Is the person doing something harmful or offensive?",
-            "Is the person reacting to something or someone?",
-            "Is the person being portrayed in a negative way?",
-
-            # Text & Caption Understanding
-            "What is the text written on the image?",
-            "Is the text in the image offensive or abusive?",
-            "Who is the target of the text in the image?",
-            "Is the text intended to mock or insult someone?",
-            "What is the tone of the caption? (funny, sarcastic, hateful)",
-
-            # Context & Intention
             "What message does the image try to convey?",
+            
+            # Context & Intent (Most important for hate speech detection)
             "Is the image making fun of a community or person?",
-            "Is this meme political or social in nature?",
-            "Does the meme show any signs of discrimination or hate?",
+            "Is the text in the image offensive or abusive?",
             "Is the meme targeting a race, gender, or religion?",
-            "Is the meme sarcastic or ironic?",
             "Is the meme meant to offend someone?",
-
-            # Additional meme-specific reasoning
-            "Is anyone being mocked or ridiculed in the image?",
-            "What emotion does the person in the image show?",
-            "Is the expression in the image happy, sad, or aggressive?",
-            "Does the person in the image look hurt or distressed?",
-            "What objects are shown in the image?",
-            "What is happening in the image?",
-            "Is there any violence or aggression in the image?",
-            "Is the image making fun of someone?",
-            "Is this image intended to insult or demean someone?",
-            "Is the image sarcastic or mocking in nature?"
+            "What is the tone of the caption? (funny, sarcastic, hateful)"
         ]
         
         # Process each question
@@ -265,7 +386,7 @@ def run_blip_vqa(image):
         for i, question in enumerate(questions):
             status_text.text(f"Processing question {i+1}/{len(questions)}: {question}")
             try:
-                inputs = processor(images=image, text=question, return_tensors="pt")
+                inputs = processor(images=image, text=question, return_tensors="pt").to(device)
                 outputs = model.generate(**inputs)
                 answer = processor.decode(outputs[0], skip_special_tokens=True)
                 results[question] = answer
@@ -463,7 +584,8 @@ tokenizer = load_tokenizer()
 @st.cache_resource
 def load_model(device):
     model = MuRILImageClassifier(num_classes=2)
-    model.load_state_dict(torch.load("best_muril_model.pth", map_location=device))
+    model_path = os.path.join(BASE_DIR, "best_muril_model.pth")
+    model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
     model.eval()
     return model
@@ -503,16 +625,24 @@ def predict_with_muril(text, image_tensor, device="cpu"):
         return "Error", 0
 
 
+@st.cache_resource
+def load_resnet50_model(device):
+    model = ResNet50BertClassifier(num_classes=2)
+    model_path = os.path.join(BASE_DIR, 'best_resnet50_bert_model.pth')
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.to(device)
+    model.eval()
+    return model
+
+@st.cache_resource
+def load_resnet50_tokenizer():
+    return BertTokenizer.from_pretrained("bert-base-multilingual-cased")
+
 def predict_with_resnet50(text, image_tensor, device="cpu"):
     try:
-        # Prepare tokenizer and model
-        tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-cased")
-        
-        # Instantiate model
-        model = ResNet50BertClassifier(num_classes=2)
-        model.load_state_dict(torch.load('best_resnet50_bert_model.pth', map_location=device))
-        model.to(device)
-        model.eval()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        tokenizer = load_resnet50_tokenizer()
+        model = load_resnet50_model(device)
         
         # Process text
         encoding = tokenizer(
@@ -547,16 +677,24 @@ def predict_with_resnet50(text, image_tensor, device="cpu"):
         traceback.print_exc()
         return "Error", 0
 
+@st.cache_resource
+def load_densenet121_model(device):
+    model = DenseNet121BertClassifier(num_classes=2)
+    model_path = os.path.join(BASE_DIR, 'best_densenet_bert_model.pth')
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.to(device)
+    model.eval()
+    return model
+
+@st.cache_resource
+def load_densenet121_tokenizer():
+    return BertTokenizer.from_pretrained('bert-base-multilingual-cased')
+
 def predict_with_densenet121(text, image_tensor, device="cpu"):
     try:
-        # Prepare tokenizer and model
-        tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
-        
-        # Instantiate model
-        model = DenseNet121BertClassifier(num_classes=2)
-        model.load_state_dict(torch.load('best_densenet_bert_model.pth', map_location=device))
-        model.to(device)
-        model.eval()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        tokenizer = load_densenet121_tokenizer()
+        model = load_densenet121_model(device)
         
         # Process text
         encoding = tokenizer(text, padding=True, truncation=True, return_tensors="pt", max_length=512)
@@ -582,14 +720,19 @@ def predict_with_densenet121(text, image_tensor, device="cpu"):
         traceback.print_exc()
         return "Error", 0
 
+@st.cache_resource
+def load_bilstm_resources():
+    model_path = os.path.join(BASE_DIR, "bilstm_model.keras")
+    model = tf.keras.models.load_model(model_path)
+    
+    tokenizer_path = os.path.join(BASE_DIR, "tokenizer.pkl")
+    with open(tokenizer_path, "rb") as f:
+        tokenizer = pickle.load(f)
+    return model, tokenizer
+
 def predict_with_bilstm(text):
     try:
-        # Load the saved model
-        model = tf.keras.models.load_model("bilstm_model.keras")
-        
-        # Load the saved tokenizer
-        with open("tokenizer.pkl", "rb") as f:
-            tokenizer = pickle.load(f)
+        model, tokenizer = load_bilstm_resources()
         
         # Tokenize and pad
         max_len = 106  # Make sure this matches the value used during training
@@ -614,7 +757,8 @@ def predict_with_bilstm(text):
 # Load the dataset (update path as needed)
 @st.cache_data
 def load_data():
-    df = pd.read_csv("final_datasets.csv")  # Replace with your actual file
+    data_path = os.path.join(BASE_DIR, "final_datasets.csv")
+    df = pd.read_csv(data_path)  # Replace with your actual file
     return df
 
 # ViT + BERT Model Definition
@@ -697,14 +841,15 @@ class XLMRClassifier(nn.Module):
 # Load ViT feature extractor and model
 @st.cache_resource
 def load_vit_resources():
-    feature_extractor = ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224")
+    feature_extractor = ViTImageProcessor.from_pretrained("google/vit-base-patch16-224")
     tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-cased")
     return feature_extractor, tokenizer
 
 @st.cache_resource
 def load_vit_model(device):
     model = ViTBertClassifier(num_classes=2)
-    model.load_state_dict(torch.load("best_vit_model.pth", map_location=device))
+    model_path = os.path.join(BASE_DIR, "best_vit_model.pth")
+    model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
     model.eval()
     return model
@@ -752,7 +897,8 @@ def load_xlmr_resources():
 @st.cache_resource
 def load_xlmr_model(device):
     model = XLMRClassifier(num_classes=2)
-    model.load_state_dict(torch.load("best_xlmr_model.pth", map_location=device))
+    model_path = os.path.join(BASE_DIR, "best_xlmr_model.pth")
+    model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
     model.eval()
     return model
@@ -763,15 +909,15 @@ def predict_with_xlmr(text, device="cpu"):
         model = load_xlmr_model(device)
         tokenizer = load_xlmr_resources()
         
-        # Tokenize text
-        encoding = tokenizer.encode_plus(
+        # Tokenize text (Transformers no longer guarantees encode_plus on all tokenizers)
+        encoding = tokenizer(
             text,
             add_special_tokens=True,
             max_length=128,
-            padding='max_length',
+            padding="max_length",
             truncation=True,
             return_attention_mask=True,
-            return_tensors='pt'
+            return_tensors="pt",
         )
         
         input_ids = encoding['input_ids'].to(device)
@@ -849,11 +995,17 @@ def preprocess_images(image):
     }
 
 # Main application header
-st.title("🧠 Hateful Meme Detection")
-st.markdown("### Upload, analyze, and classify memes")
+ui_hero(
+    "HateLens",
+    "Multilingual, multimodal meme screening with face + content analysis and a multi-model consensus.",
+)
+st.write("")
 
 # Create sidebar menu
-st.sidebar.title("Navigation")
+st.sidebar.markdown("## HateLens")
+st.sidebar.caption("Modern hateful meme detection dashboard")
+st.sidebar.markdown("---")
+st.sidebar.markdown("### Navigation")
 app_mode = st.sidebar.radio("Select a section:", [
     "📤 Upload & Process", 
     "👤 Face Analysis", 
@@ -867,8 +1019,9 @@ app_mode = st.sidebar.radio("Select a section:", [
 
 # Upload & Process section
 if app_mode == "📤 Upload & Process":
-    st.header("Upload & Process Your Meme")
-    st.markdown("Upload a meme image to start the analysis pipeline.")
+    ui_card_start()
+    st.subheader("Upload & Process")
+    st.caption("Upload a meme image to start the analysis pipeline.")
     
     uploaded_file = st.file_uploader("Choose an image file", type=["jpg", "jpeg", "png"])
     
@@ -876,7 +1029,7 @@ if app_mode == "📤 Upload & Process":
         # Display the uploaded image
         image = PILImage.open(uploaded_file).convert("RGB")
         st.session_state.uploaded_image = image
-        st.image(image, caption="Uploaded Meme", use_container_width=True)
+        st.image(image, caption="Uploaded Meme", width="stretch")
         
         # Process image with multiple techniques
         processed_images = preprocess_images(image)
@@ -887,15 +1040,15 @@ if app_mode == "📤 Upload & Process":
         
         with col1:
             st.markdown("**Rescaled (70%)**")
-            st.image(processed_images['rescaled'], use_container_width=True)
+            st.image(processed_images['rescaled'], width="stretch")
             
         with col2:
             st.markdown("**Gaussian Blur**")
-            st.image(processed_images['blurred'], use_container_width=True)
+            st.image(processed_images['blurred'], width="stretch")
             
         with col3:
             st.markdown("**Deskewed**")
-            st.image(processed_images['deskewed'], use_container_width=True)
+            st.image(processed_images['deskewed'], width="stretch")
         
         # Process button for the original pipeline
         if st.button("Start Processing Pipeline"):
@@ -920,11 +1073,13 @@ if app_mode == "📤 Upload & Process":
                 # Redirect to next section
                 st.markdown("### Next Steps")
                 st.info("Go to the 'Face Analysis' section in the sidebar to continue.")
+    ui_card_end()
 
 
 # Face Analysis section
 elif app_mode == "👤 Face Analysis":
-    st.header("Face Detection & Analysis")
+    ui_card_start()
+    st.subheader("Face Detection & Analysis")
     
     if st.session_state.uploaded_image is None:
         st.warning("Please upload an image first.")
@@ -934,12 +1089,12 @@ elif app_mode == "👤 Face Analysis":
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Original Image")
-            st.image(st.session_state.uploaded_image, use_container_width=True)
+            st.image(st.session_state.uploaded_image, width="stretch")
         
         with col2:
             st.subheader("Detected Face")
             if st.session_state.cropped_face is not None:
-                st.image(st.session_state.cropped_face, use_container_width=True)
+                st.image(st.session_state.cropped_face, width="stretch")
             else:
                 st.info("No face detected in this image.")
         
@@ -971,10 +1126,12 @@ elif app_mode == "👤 Face Analysis":
         # Next steps
         st.markdown("### Next Steps")
         st.info("Go to the 'Content Analysis' section in the sidebar to continue.")
+    ui_card_end()
 
 # Content Analysis section
 elif app_mode == "🔍 Content Analysis":
-    st.header("Meme Content Analysis")
+    ui_card_start()
+    st.subheader("Meme Content Analysis")
     
     if st.session_state.uploaded_image is None:
         st.warning("Please upload an image first.")
@@ -1031,10 +1188,12 @@ elif app_mode == "🔍 Content Analysis":
         # Next steps
         st.markdown("### Next Steps")
         st.info("Go to the 'Model Predictions' section in the sidebar to continue.")
+    ui_card_end()
 
 # Model Predictions section
 elif app_mode == "🤖 Model Predictions":
-    st.header("Meme Classification Models")
+    ui_card_start()
+    st.subheader("Meme Classification Models")
     
     if st.session_state.uploaded_image is None:
         st.warning("Please upload an image first.")
@@ -1187,10 +1346,12 @@ elif app_mode == "🤖 Model Predictions":
         # Next steps
         st.markdown("### Next Steps")
         st.info("Go to the 'Results Overview' section in the sidebar to see a complete report.")
+    ui_card_end()
 
 # Results Overview section
 elif app_mode == "📊 Results Overview":
-    st.header("Complete Analysis Report")
+    ui_card_start()
+    st.subheader("Complete Analysis Report")
     
     if st.session_state.uploaded_image is None:
         st.warning("Please upload an image first.")
@@ -1204,7 +1365,7 @@ elif app_mode == "📊 Results Overview":
         
         with tab1:
             st.subheader("Uploaded Meme")
-            st.image(st.session_state.uploaded_image, use_container_width=True)
+            st.image(st.session_state.uploaded_image, width="stretch")
             
             # Display key content insights
             st.subheader("Key Content Insights")
@@ -1220,7 +1381,7 @@ elif app_mode == "📊 Results Overview":
                 col1, col2 = st.columns([1, 2])
                 
                 with col1:
-                    st.image(st.session_state.cropped_face, caption="Detected Face", use_container_width=True)
+                    st.image(st.session_state.cropped_face, caption="Detected Face", width="stretch")
                 
                 with col2:
                     if st.session_state.facial_features != 'NA' and st.session_state.facial_features is not None:
@@ -1374,7 +1535,7 @@ elif app_mode == "📊 Results Overview":
             styled_df = df.style.applymap(highlight_classification, subset=['Classification'])
 
             # Display the styled dataframe
-            st.dataframe(styled_df, use_container_width=True)
+            st.dataframe(styled_df, width="stretch")
 
             # Final consensus using your original logic
             harmful_count = sum(1 for model, pred in st.session_state.model_predictions.items() if pred['label'] == 'Harmful')
@@ -1386,14 +1547,14 @@ elif app_mode == "📊 Results Overview":
             st.subheader("Overall Consensus")
             if consensus == "Harmful":
                 st.markdown(f"""
-                    <div style="background-color: #fee2e2; padding: 20px; border-radius: 8px; text-align: center;">
+                    <div style="background-color: #E80909; padding: 20px; border-radius: 8px; text-align: center;">
                         <h2 style="color: #b91c1c;">⚠️ HARMFUL</h2>
                         <p style="color: #000000;">Majority of models ({harmful_count} out of 6) classified this meme as potentially harmful content.</p>
                     </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
-                    <div style="background-color: #d1fae5; padding: 20px; border-radius: 8px; text-align: center;">
+                    <div style="background-color: #42E03D; padding: 20px; border-radius: 8px; text-align: center;">
                         <h2 style="color: #047857;">✅ NON-HARMFUL</h2>
                         <p style="color: #000000;">Majority of models ({4 - harmful_count} out of 6) classified this meme as non-harmful content.</p>
                     </div>
@@ -1548,9 +1709,11 @@ elif app_mode == "📊 Results Overview":
                     file_name="hateful_meme_report.pdf",
                     mime="application/pdf"
                 )
+    ui_card_end()
 
 elif app_mode == "📈 Dataset EDA":
-    st.header("🧬 Exploratory Data Analysis (EDA)")
+    ui_card_start()
+    st.subheader("🧬 Exploratory Data Analysis (EDA)")
 
     df = load_data()
 
@@ -1569,42 +1732,42 @@ elif app_mode == "📈 Dataset EDA":
     with col1:
         st.subheader("🧑 Gender Distribution")
         fig = px.histogram(df, x='gender', color='gender', title="Gender Distribution")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.subheader("🎂 Age Distribution")
         fig = px.histogram(df, x='age', nbins=30, title="Age Distribution")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.subheader("📊 Age Bucket Distribution")
         fig = px.histogram(df, x='age_bucket', color='age_bucket', title="Age Bucket Distribution")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.subheader("🌈 Dominant Emotion Distribution")
         fig = px.histogram(df, x='dominant_emotion', color='dominant_emotion', title="Dominant Emotion Distribution")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.subheader("🏷️ Distribution of Hateful vs Non-Hateful Memes")
         fig = px.histogram(df, x='label', color='label', title="Hateful vs Non-Hateful Memes", labels={"label": "Label (0 = Non-Hateful, 1 = Hateful)"})
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col2:
         st.subheader("🌍 Dominant Race Distribution")
         fig = px.histogram(df, x='dominant_race', color='dominant_race', title="Dominant Race Distribution")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.subheader("🔥 Top 6 Dominant Emotions")
         top_emotions = df['dominant_emotion'].value_counts().nlargest(6).reset_index()
         top_emotions.columns = ['emotion', 'count']
         fig = px.bar(top_emotions, x='emotion', y='count', color='emotion', title="Top 6 Emotions")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.subheader("🧠 Dominant Emotion by Gender")
         fig = px.box(df, x='gender', y='age', color='dominant_emotion', title="Age by Emotion & Gender")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.subheader("🧬 Gender Distribution in Hateful vs Non-Hateful Memes")
         fig = px.histogram(df, x='gender', color='label', barmode='group', title="Gender by Hate Label", labels={"label": "0 = Non-Hateful, 1 = Hateful"})
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # More Advanced EDA Visuals
     st.subheader("📊 Emotion Distribution by Race (Heatmap)")
@@ -1621,11 +1784,11 @@ elif app_mode == "📈 Dataset EDA":
 
     st.subheader("🧑‍🦳 Age Distribution in Hateful vs Non-Hateful Memes")
     fig = px.box(df, x='label', y='age', color='label', title="Age by Hate Label", labels={"label": "0 = Non-Hateful, 1 = Hateful"})
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     st.subheader("🔺 Dominant Emotion in Hateful vs Non-Hateful Memes")
     fig = px.histogram(df, x='dominant_emotion', color='label', barmode='group', title="Emotion by Hate Label")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     st.subheader("📊 Age Bucket vs Hateful Meme (Heatmap)")
     heat_df = pd.crosstab(df['age_bucket'], df['label'])
@@ -1635,10 +1798,12 @@ elif app_mode == "📈 Dataset EDA":
 
     st.subheader("📊 Dominant Race vs Hateful Meme")
     fig = px.histogram(df, x='dominant_race', color='label', barmode='group', title="Race by Hate Label")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
+    ui_card_end()
 
 elif app_mode == "📝 Methodology":
-    st.title("Proposed Methodology")
+    ui_card_start()
+    st.subheader("Proposed Methodology")
     
     tab1, tab2, tab3 = st.tabs(["Overview", "Static Diagrams", "Interactive Visualization"])
     
@@ -1657,16 +1822,17 @@ elif app_mode == "📝 Methodology":
     
     with tab2:
         st.subheader("Feature Extraction Pipeline")
-        st.image("P_1.png", caption="Meme Feature Extraction Pipeline", use_container_width=True)
+        st.image("P_1.png", caption="Meme Feature Extraction Pipeline", width="stretch")
         
         st.subheader("Model Architecture")
-        st.image("P_2.png", caption="Multimodal Fusion Architecture", use_container_width=True)
+        st.image("P_2.png", caption="Multimodal Fusion Architecture", width="stretch")
     
     with tab3:
         st.subheader("Interactive Methodology Diagram")
         # Embed the React component (replace with your actual path)
         # This assumes you've saved the React code to an HTML file
-        components.html(open("interactive_methodology.html").read(), height=700)
+        html_path = os.path.join(BASE_DIR, "interactive_methodology.html")
+        components.html(open(html_path).read(), height=700)
         
         # Alternative if you're not using the React component
         st.markdown("""
@@ -1675,11 +1841,13 @@ elif app_mode == "📝 Methodology":
         - Hover over components for detailed explanations
         - Click on elements to see related research or implementation details
         """)
+    ui_card_end()
 
 # Model Performance Report section
 elif app_mode == "📚 Model Performance":
-    st.header("Model Performance Reports")
-    st.subheader("Evaluate and compare model performance metrics")
+    ui_card_start()
+    st.subheader("Model Performance Reports")
+    st.caption("Evaluate and compare model performance metrics")
     
     # Model selection dropdown
     model_options = ["MuRIL", "ResNet50", "DenseNet121", "BiLSTM", "ViT", "XLM-RoBERTa"]
@@ -2136,6 +2304,7 @@ elif app_mode == "📚 Model Performance":
             plt.grid(True, linestyle='--', alpha=0.5)
             
             st.pyplot(fig)
+    ui_card_end()
 # Footer information
 st.markdown("---")
 st.markdown("""

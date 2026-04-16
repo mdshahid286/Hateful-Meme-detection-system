@@ -10,3 +10,8 @@ transformers
 tf-keras
 tensorflow
 keras
+opencv-python
+reportlab
+plotly
+seaborn
+Pillow
