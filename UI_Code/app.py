@@ -1339,9 +1339,9 @@ elif app_mode == "🤖 Model Predictions":
                 
                 st.markdown(f"### Overall Consensus")
                 if consensus == "Harmful":
-                    st.markdown(f"<div style='background-color: #fee2e2; padding: 20px; border-radius: 8px; text-align: center; color: #000000;'><h2 style='color: #b91c1c;'>⚠️ HARMFUL</h2><p>Majority of models classified this meme as potentially harmful content.</p></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='background-color: #E80909; padding: 20px; border-radius: 8px; text-align: center; color: #000000;'><h2 style='color: #b91c1c;'>⚠️ HARMFUL</h2><p>Majority of models classified this meme as potentially harmful content.</p></div>", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"<div style='background-color: #d1fae5; padding: 20px; border-radius: 8px; text-align: center; color: #000000;'><h2 style='color: #047857;'>✅ NON-HARMFUL</h2><p>Majority of models classified this meme as non-harmful content.</p></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='background-color: #42E03D; padding: 20px; border-radius: 8px; text-align: center; color: #000000;'><h2 style='color: #047857;'>✅ NON-HARMFUL</h2><p>Majority of models classified this meme as non-harmful content.</p></div>", unsafe_allow_html=True)
         
         # Next steps
         st.markdown("### Next Steps")
